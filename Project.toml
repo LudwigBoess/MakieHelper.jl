@@ -1,0 +1,4 @@
+name = "MakieHelper"
+uuid = "71e18872-25dd-447c-a1db-6fd8d7ba453f"
+authors = ["LudwigBoess <lboess@uchicago.edu>"]
+version = "0.1.0"
