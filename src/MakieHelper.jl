@@ -15,7 +15,6 @@ module MakieHelper
             bin_2D, bin_2D!,
             bin_2D_quantity!,
             bin_2D_log, bin_2D_log!,
-            bin_2D_quantity_log!,
+            bin_2D_quantity_log!
 
-
-end # module MakieHelper
+end

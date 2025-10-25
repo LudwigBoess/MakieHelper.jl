@@ -1,4 +1,10 @@
 name = "MakieHelper"
 uuid = "71e18872-25dd-447c-a1db-6fd8d7ba453f"
-authors = ["LudwigBoess <lboess@uchicago.edu>"]
 version = "0.1.0"
+authors = ["LudwigBoess <lboess@uchicago.edu>"]
+
+[deps]
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+
+[compat]
+Makie = "0.24.6"

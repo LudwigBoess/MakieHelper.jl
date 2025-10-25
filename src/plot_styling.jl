@@ -27,7 +27,7 @@ function get_theme(darkmode::Bool=false; fontsize::Integer=15)
                 xtickcolor = :white,
                 ytickcolor = :white,
                 xminortickcolor = :white,
-                yminortickcolor = :white,),
+                yminortickcolor = :white),
             Colorbar = (
                 tickcolor = :white,
                 spinecolor = :white,
@@ -58,10 +58,10 @@ end
 
 function set_dark_theme!(; fontsize::Integer=15)
     my_theme = get_theme(true; fontsize)
-    set_theme!(merged_theme)
+    set_theme!(my_theme)
 end
 
 function set_light_theme!(; fontsize::Integer=15)
     my_theme = get_theme(false; fontsize)
-    set_theme!(merged_theme)
+    set_theme!(my_theme)
 end
