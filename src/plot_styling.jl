@@ -10,7 +10,7 @@ function get_theme(darkmode::Bool=false; fontsize::Integer=15)
             backgroundcolor = :black,
             textcolor = :white,
             linecolor = :white,
-            fontsize=15,
+            fontsize=fontsize,
             Axis = ( xticksmirrored=true,
                 yticksmirrored=true,
                 xminorticksvisible=true,
@@ -30,11 +30,15 @@ function get_theme(darkmode::Bool=false; fontsize::Integer=15)
                 yminortickcolor = :white),
             Colorbar = (
                 tickcolor = :white,
+                minortickcolor = :white,
                 spinecolor = :white,
                 topspinecolor = :white,
                 bottomspinecolor = :white,
                 leftspinecolor = :white,
                 rightspinecolor = :white,
+                minorticksvisible=true,
+                tickalign=1,
+                minortickalign=1
                 )
             )
     else
@@ -48,8 +52,12 @@ function get_theme(darkmode::Bool=false; fontsize::Integer=15)
                     xminortickalign=1,
                     yminortickalign=1,
                     xtickalign=1,
-                    ytickalign=1),
-                Colorbar = (tickalign=1)
+                    ytickalign=1,
+                    xgridvisible = false,
+                    ygridvisible = false),
+                Colorbar = (minorticksvisible=true,
+                tickalign=1,
+                minortickalign=1)
                 )
     end
 
