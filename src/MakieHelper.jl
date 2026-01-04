@@ -1,9 +1,11 @@
 module MakieHelper
 
     using Makie
+    using Colors, ColorTypes, ColorSchemes
 
     include("binning.jl")
     include("plot_styling.jl")
+    include("colorschemes.jl")
 
     export get_theme,
             set_dark_theme!,
