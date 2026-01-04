@@ -6,6 +6,7 @@ module MakieHelper
     include("binning.jl")
     include("plot_styling.jl")
     include("colorschemes.jl")
+    include("symlog10.jl")
 
     export get_theme,
             set_dark_theme!,
@@ -17,6 +18,7 @@ module MakieHelper
             bin_2D, bin_2D!,
             bin_2D_quantity!,
             bin_2D_log, bin_2D_log!,
-            bin_2D_quantity_log!
+            bin_2D_quantity_log!,
+            Symlog10
 
 end
