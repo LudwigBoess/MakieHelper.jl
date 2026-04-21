@@ -7,6 +7,7 @@ module MakieHelper
     include("plot_styling.jl")
     include("colorschemes.jl")
     include("symlog10.jl")
+    include("ticks.jl")
 
     export get_theme,
             set_dark_theme!,
@@ -19,6 +20,9 @@ module MakieHelper
             bin_2D_quantity!,
             bin_2D_log, bin_2D_log!,
             bin_2D_quantity_log!,
-            Symlog10
+            Symlog10,
+            spezi,
+            round_to_next_N,
+            get_integer_ticks
 
 end
