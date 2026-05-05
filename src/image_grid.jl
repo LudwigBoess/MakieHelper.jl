@@ -41,7 +41,6 @@ function plot_image_grid(Nrows, Ncols, files, im_cmap, cb_labels, vmin_arr, vmax
                                 shift_colorbar_labels_inward = trues(Nrows*Ncols),
                                 upscale = Ncols,
                                 read_mode = 1,
-                                transparent = false,
                                 ticks_color = "k",
                                 annotation_color = "w",
                                 colorbar_location="top",
@@ -213,13 +212,13 @@ function plot_image_grid(Nrows, Ncols, files, im_cmap, cb_labels, vmin_arr, vmax
 
             else
                 minortick_intervals = IntervalsBetween(10)
-                # Create 5 equally spaced ticks natively bounded by vmin and vmax
+                cb_ticks = Makie.automatic
                 cbtickformat = values -> [@sprintf("%g", value) for value in values]
             end
 
             # Natively handled Colorbars with custom explicitly defined ticks
             if colorbar_mode == "single"
-                if col == 1 && row == 1
+                if col == Ncols && row == Nrows
                     if colorbar_location == "top" || (colorbar_location == "single" && !colorbar_bottom)
                         Colorbar(fig[0, 1:Ncols], im, label=cb_labels[selected], vertical=false,
                                 ticks=cb_ticks, minorticks=minortick_intervals,
@@ -276,6 +275,5 @@ function plot_image_grid(Nrows, Ncols, files, im_cmap, cb_labels, vmin_arr, vmax
     resize_to_layout!(fig)
 
     @info "saving $plot_name"
-    save(plot_name, fig, transparent=transparent)
-
+    save(plot_name, fig)
 end
