@@ -48,7 +48,8 @@ function plot_image_grid(Nrows, Ncols, files, im_cmap, cb_labels, vmin_arr, vmax
                                 grid_direction="column",
                                 dpi=400,
                                 overplotting_functions=nothing,
-                                colorbar_size = 25
+                                colorbar_size = 25,
+                                rasterize = true
                             )
 
     # Added figure_padding = 30 to prevent edge tick labels from clipping
@@ -96,7 +97,7 @@ function plot_image_grid(Nrows, Ncols, files, im_cmap, cb_labels, vmin_arr, vmax
             im_kwargs = Dict{Symbol, Any}()
             im_kwargs[:colormap] = Symbol(im_cmap[selected])
             im_kwargs[:colorrange] = (vmin_arr[selected], vmax_arr[selected])
-            im_kwargs[:rasterize] = true
+            im_kwargs[:rasterize] = rasterize
 
             if log_map[selected]
                 im_kwargs[:colorscale] = log10
