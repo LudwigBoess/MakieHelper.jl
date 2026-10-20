@@ -31,6 +31,8 @@ module MakieHelper
             spezi,
             round_to_next_N,
             get_integer_ticks,
+            DecadeTicks,
+            DecadeMinorTicks,
             plot_image_grid
 
 end
