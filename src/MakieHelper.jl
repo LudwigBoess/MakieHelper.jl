@@ -39,5 +39,8 @@ module MakieHelper
             plot_merger_tree,
             plot_merger_forest,
             add_redshift_axis!
+            DecadeTicks,
+            DecadeMinorTicks,
+            plot_image_grid
 
 end

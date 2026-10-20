@@ -1,7 +1,9 @@
 """
-    get_theme(;fontsize::Integer=15)
+    get_theme(darkmode=false; fontsize::Integer=15)
 
-Get the default theme
+Get the default theme. Logarithmic axes and colorbars get whole-decade tick
+labels and `m × 10ⁿ` minor ticks ([`DecadeTicks`](@ref),
+[`DecadeMinorTicks`](@ref)); all other axes keep Makie's automatic ticks.
 """
 function get_theme(darkmode::Bool=false; fontsize::Integer=15)
 
@@ -27,7 +29,11 @@ function get_theme(darkmode::Bool=false; fontsize::Integer=15)
                 xtickcolor = :white,
                 ytickcolor = :white,
                 xminortickcolor = :white,
-                yminortickcolor = :white),
+                yminortickcolor = :white,
+                xticks = DecadeTicks(),
+                yticks = DecadeTicks(),
+                xminorticks = DecadeMinorTicks(IntervalsBetween(2)),
+                yminorticks = DecadeMinorTicks(IntervalsBetween(2))),
             Colorbar = (
                 tickcolor = :white,
                 minortickcolor = :white,
@@ -38,7 +44,9 @@ function get_theme(darkmode::Bool=false; fontsize::Integer=15)
                 rightspinecolor = :white,
                 minorticksvisible=true,
                 tickalign=1,
-                minortickalign=1
+                minortickalign=1,
+                ticks = DecadeTicks(),
+                minorticks = DecadeMinorTicks(IntervalsBetween(5))
                 )
             )
     else
@@ -54,10 +62,16 @@ function get_theme(darkmode::Bool=false; fontsize::Integer=15)
                     xtickalign=1,
                     ytickalign=1,
                     xgridvisible = false,
-                    ygridvisible = false),
+                    ygridvisible = false,
+                    xticks = DecadeTicks(),
+                    yticks = DecadeTicks(),
+                    xminorticks = DecadeMinorTicks(IntervalsBetween(2)),
+                    yminorticks = DecadeMinorTicks(IntervalsBetween(2))),
                 Colorbar = (minorticksvisible=true,
                 tickalign=1,
-                minortickalign=1)
+                minortickalign=1,
+                ticks = DecadeTicks(),
+                minorticks = DecadeMinorTicks(IntervalsBetween(5)))
                 )
     end
 
