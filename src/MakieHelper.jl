@@ -7,6 +7,7 @@ module MakieHelper
     using ImageFiltering
     using SPHtoGrid
     using Printf
+    using GadgetIO
 
     include("binning.jl")
     include("plot_styling.jl")
@@ -15,6 +16,7 @@ module MakieHelper
     include("ticks.jl")
     include("utility.jl")
     include("image_grid.jl")
+    include("merger_trees.jl")
 
     export get_theme,
             set_dark_theme!,
@@ -31,6 +33,11 @@ module MakieHelper
             spezi,
             round_to_next_N,
             get_integer_ticks,
-            plot_image_grid
+            plot_image_grid,
+            MergerTreeLayout,
+            tree_layout,
+            plot_merger_tree,
+            plot_merger_forest,
+            add_redshift_axis!
 
 end
