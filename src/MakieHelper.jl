@@ -17,6 +17,7 @@ module MakieHelper
     include("utility.jl")
     include("image_grid.jl")
     include("merger_trees.jl")
+    include("rt_rendering.jl")
 
     export get_theme,
             set_dark_theme!,
@@ -42,5 +43,11 @@ module MakieHelper
             DecadeTicks,
             DecadeMinorTicks,
             plot_image_grid
+
+    export render_volume,
+            rt_image,
+            rt_image!,
+            rt_project,
+            rt_colorbar
 
 end
