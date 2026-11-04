@@ -2,9 +2,100 @@
 _mcolor(c) = c == "k" ? :black : (c == "w" ? :white : Symbol(c))
 
 """
-    plot_image_grid(Nrows, Ncols, files, im_cmap, cb_labels, vmin_arr, vmax_arr, plot_name; ...)
+    plot_image_grid(Nrows, Ncols, files, im_cmap, cb_labels, vmin_arr, vmax_arr, plot_name; kwargs...)
 
-Creates an `image_grid` plot with `Ncols` and `Nrows` with colorbars automatically handled by CairoMakie layouting.
+Plot a grid of 2D maps with colorbars and save it to `plot_name`.
+
+Panels sit flush in square cells without axes. Each panel can carry a scale bar, text labels,
+contours, streamlines, circles and a smoothing beam.
+
+# Panel order and indexing
+Panels are filled row by row: the panel index `Nfile` runs across all columns of row 1 first.
+`files`, `map_arr`, `par_arr` and every keyword indexed by `Nfile` follow this order; a matrix is
+read in its column-major linear order.
+
+Properties indexed by `selected` (colormap, colour range, log scale, NaN masking, contours,
+streamlines) take one entry per colorbar:
+- `colorbar_mode="edge"`: one colorbar per column, `selected = col`. With
+  `colorbar_location="right"` there is one colorbar per row instead, `selected = row`.
+- `colorbar_mode="single"`: one colorbar for the whole grid, `selected = 1`.
+
+`grid_direction="column"` (the default) swaps `Nrows` and `Ncols` before the grid is built; pass
+`"row"` to use them as given.
+
+# Arguments
+- `Nrows`, `Ncols`: grid shape.
+- `files`: map filenames in panel order, read according to `read_mode`.
+- `im_cmap`: colormap names, indexed by `selected`.
+- `cb_labels`: colorbar labels, indexed by `selected`.
+- `vmin_arr`, `vmax_arr`: colour range, indexed by `selected`. Log maps are clamped to `vmin_arr`.
+- `plot_name`: output path; its extension sets the file format.
+
+# Keywords
+Map input:
+- `read_mode = 1`: format of `files`: 1 SPHtoGrid FITS, 2 Smac1 binary, 3 Smac2, 4 Smac1 FITS.
+- `map_arr`, `par_arr`: preloaded maps and their `mappingParameters` in panel order, used instead
+  of `files` when `map_arr` is given.
+- `cutoffs`: floor for each map; NaN and Inf pixels are set to it too. Indexed by `col`, or by
+  `row` for right-hand edge colorbars.
+- `log_map`: log10 colour scale, indexed by `selected`.
+- `mask_bad`, `bad_colors`: colour NaN pixels with `bad_colors`, indexed by `selected`. No effect
+  together with `cutoffs`, which removes NaNs.
+
+Smoothing:
+- `smooth_sizes`: Gaussian smoothing width per entry, an `(x, y)` pair in map length units; the
+  kernel σ is half the width.
+- `smooth_file`: smooth panel `Nfile` with `smooth_sizes[Nfile]`.
+- `smooth_col`: smooth every panel in column `col` with `smooth_sizes[col]`.
+- `annotate_smoothing`, `smooth_contour_col`: draw a white ellipse of diameter
+  `smooth_sizes[Nfile]` in the lower left of each panel in column `col`. `smooth_col[Nfile]` also
+  draws it.
+
+Contours and streamlines:
+- `contours`: overlay dashed contours, indexed by `selected`. The contour map of panel `Nfile` is
+  read from `contour_files`, or taken from `contour_arr` and `contour_par_arr`.
+- `contour_levels`: contour levels; values below the first level, NaN and Inf are set to it.
+  `nothing` picks levels automatically.
+- `contour_color`, `alpha_contours`: contour colour and opacity (`alpha_contours[selected]`).
+- `smooth_contour_file`: smooth the contour map of panel `Nfile` with `smooth_sizes[Nfile]`.
+- `streamlines`: overlay streamlines, indexed by `selected`, with x and y components read from
+  the SPHtoGrid FITS files `streamline_files[Nfile]` and `streamline_files[Nfile+1]`.
+
+Annotations (indexed by `Nfile` unless noted):
+- `annotate_scale`, `scale_kpc`, `scale_label`: scale bar of length `scale_kpc` in map length
+  units in the lower right, labelled `scale_label`.
+- `annotate_time`, `time_labels`: label in the upper left.
+- `annotate_text`, `text_labels`: label in the upper right.
+- `annotation_color = "w"`: colour of scale bars and labels.
+- `r_circles`, `circle_alpha`, `circle_lines`: circles of radius `r_circles` in map length units
+  around the map centre on every panel, with linestyles `circle_lines` from the largest radius
+  down.
+- `overplotting_functions`: callbacks `f(ax)` in panel order, called after the image, contours
+  and streamlines are drawn.
+
+Layout:
+- `colorbar_mode = "edge"`: `"edge"` or `"single"`, see above.
+- `colorbar_location = "top"`: `"top"`, `"bottom"` or `"right"`.
+- `colorbar_bottom = false`: with `colorbar_mode="single"`, put the colorbar at the bottom unless
+  `colorbar_location="top"`.
+- `colorbar_size = 25`: colorbar thickness in pixels. Log colorbars are ticked at whole decades.
+- `grid_direction = "column"`: `"column"` or `"row"`, see above.
+- `upscale = Ncols`: sets the panel size relative to the font size; the figure starts at
+  `600upscale × 650upscale` per panel and is then shrunk to the layout.
+- `rasterize = true`: rasterize the images in vector output.
+
+`dpi`, `ticks_color`, `circle_color` and `shift_colorbar_labels_inward` are accepted for
+compatibility with `PyPlotUtility.plot_image_grid` but unused.
+
+# Example
+B in the top row and divB in the bottom row for three runs, one colorbar per row on the right:
+```julia
+files = [folder * "/maps/snap_045.\$q.yz.fits" for folder ∈ folders, q ∈ ["B", "divB"]]
+
+plot_image_grid(2, 3, files, ["magma", "inferno"], [L"B \\: [\\mu \\mathrm{G}]", L"h |\\nabla \\cdot B| / |B|"],
+                [1.e-3, 1.e-2], [10.0, 20.0], "BdivB.pdf",
+                cutoffs = [1.e-3, 1.e-2], grid_direction = "row", colorbar_location = "right")
+```
 """
 function plot_image_grid(Nrows, Ncols, files, im_cmap, cb_labels, vmin_arr, vmax_arr, plot_name;
                                 map_arr = nothing, par_arr = nothing,
@@ -85,13 +176,16 @@ function plot_image_grid(Nrows, Ncols, files, im_cmap, cb_labels, vmin_arr, vmax
                 map = smooth_map!(map, smooth_sizes[col], par)
             end
 
-            if !isnothing(cutoffs)
-                map[map .< cutoffs[col]] .= cutoffs[col]
-                map[isnan.(map)] .= cutoffs[col]
-                map[isinf.(map)] .= cutoffs[col]
-            end
+            # right-hand edge colorbars are one per row, so their properties are selected by row
+            per_row = colorbar_mode == "edge" && colorbar_location == "right"
+            selected = colorbar_mode == "single" ? 1 : (per_row ? row : col)
 
-            selected = colorbar_mode == "single" ? 1 : col
+            if !isnothing(cutoffs)
+                icut = per_row ? row : col
+                map[map .< cutoffs[icut]] .= cutoffs[icut]
+                map[isnan.(map)] .= cutoffs[icut]
+                map[isinf.(map)] .= cutoffs[icut]
+            end
 
             # Image Attributes
             im_kwargs = Dict{Symbol, Any}()
