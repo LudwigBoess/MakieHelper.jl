@@ -1,9 +1,13 @@
 # Orthographic CPU volume renderer for 3D scalar fields: emission-absorption
 # ray-march with front-to-back compositing over a black background. The result is
 # an RGB image that CairoMakie plots with `image!`, standing in for the volume
-# rendering CairoMakie lacks. Sampling, normalisation and compositing follow
-# entity's in-situ renderer (src/output/render/raymarch.hpp), so the range and
-# opacity settings of a scene carry over to the in-situ [render] deck.
+# rendering CairoMakie lacks. Two integrators:
+# - default: per-sample opacity as in entity's in-situ renderer
+#   (src/output/render/raymarch.hpp), so the range and opacity settings of a scene
+#   carry over to the in-situ [render] deck;
+# - `l_ref` given: the biased ray march of Blender Cycles
+#   (intern/cycles/kernel/integrator/shade_volume.h, "Biased" volume option) with
+#   extinction and emission per unit length, independent of the step size.
 
 _rt_vec3(v::Number) = (Float64(v), Float64(v), Float64(v))
 _rt_vec3(v)         = (Float64(v[1]), Float64(v[2]), Float64(v[3]))
@@ -50,6 +54,20 @@ function _rt_lut(cmap, alpha_pts, n_lut)
         c = Makie.interpolated_getindex(cm, u)
         a = Float32(_rt_alpha_at(alpha_pts, u))
         lut[i] = (red(c) * a, green(c) * a, blue(c) * a, a)
+    end
+    return lut
+end
+
+# (r, g, b, σ) lookup table for the Cycles integrator: straight colormap colour and the
+# extinction per world unit of a slab of thickness l_ref whose opacity is alpha(u)
+function _rt_extinction_lut(cmap, alpha_pts, n_lut, l_ref)
+    cm  = Makie.to_colormap(cmap)
+    lut = Vector{NTuple{4,Float64}}(undef, n_lut)
+    for i = 1:n_lut
+        u = (i - 1) / (n_lut - 1)
+        c = Makie.interpolated_getindex(cm, u)
+        a = Float64(_rt_alpha_at(alpha_pts, u))
+        lut[i] = (Float64(red(c)), Float64(green(c)), Float64(blue(c)), -log1p(-a) / l_ref)
     end
     return lut
 end
@@ -123,9 +141,79 @@ function _rt_march(F, x0, inv_dx, o, d, te, tx, ds, lut, logscale, vlo, inv_rang
     return ar, ag, ab
 end
 
+# Cycles' biased ray march along one ray: segments end at te + (i + offset) ds, the
+# first one shortened by offset ∈ [0, 1]; each is shaded once at the fraction shade of
+# its length, with transmittance exp(-σ dt) and emission σ c integrated exactly over dt
+function _rt_march_segments(F, x0, inv_dx, o, d, te, tx, ds, tab, logscale, vlo, inv_range, offset, shade, early)
+    nl = length(tab)
+    L1 = L2 = L3 = 0.0
+    Tr = 1.0
+    lo = te
+    i  = 0
+    while lo < tx
+        hi = min(tx, te + (i + offset) * ds)
+        i += 1
+        hi > lo || continue
+        ts = lo + shade * (hi - lo)
+        s  = _rt_sample(F, x0, inv_dx, (o[1] + ts * d[1], o[2] + ts * d[2], o[3] + ts * d[3]))
+        u  = logscale ? (s > 0 ? (log10(s) - vlo) * inv_range : -1.0) : (s - vlo) * inv_range
+        u  = isnan(u) ? 0.0 : clamp(u, 0.0, 1.0)
+        @inbounds cr, cg, cb, σ = tab[unsafe_trunc(Int, u * (nl - 1) + 0.5) + 1]
+        if σ > 0
+            # segment opacity 1 - exp(-σ dt) = ∫ σ exp(-σ t) dt over the segment
+            a   = -expm1(-σ * (hi - lo))
+            w   = Tr * a
+            L1 += w * cr
+            L2 += w * cg
+            L3 += w * cb
+            Tr *= 1 - a
+            1 - Tr >= early && break
+        end
+        lo = hi
+    end
+    return L1, L2, L3
+end
+
+# splitmix64 finaliser
+@inline function _rt_mix(x::UInt64)
+    x = (x ⊻ (x >> 30)) * 0xbf58476d1ce4e5b9
+    x = (x ⊻ (x >> 27)) * 0x94d049bb133111eb
+    return x ⊻ (x >> 31)
+end
+
+# uniform number in [0, 1) for (seed, pixel, ray sample, dimension); a pure function of
+# its arguments, so the image does not depend on thread scheduling
+@inline function _rt_rand(seed, px, py, s, dim)
+    h = _rt_mix((seed % UInt64) + 0x9e3779b97f4a7c15)
+    h = _rt_mix(h ⊻ (px % UInt64))
+    h = _rt_mix(h ⊻ (py % UInt64))
+    h = _rt_mix(h ⊻ (((s % UInt64) << 8) | (dim % UInt64)))
+    return (h >> 11) * 0x1.0p-53
+end
+
+# casts the ray of every pixel through the box [lo, hi] and stores f(o, te, tx, px, py) -> (r, g, b)
+function _rt_pixels!(f, img, eye, fwd, right, upc, half_w, half_h, lo, hi)
+    H, W = size(img, 1), size(img, 2)
+    Threads.@threads for py = 1:H
+        sy = (1 - 2 * (py - 0.5) / H) * half_h
+        for px = 1:W
+            sx = (2 * (px - 0.5) / W - 1) * half_w
+            o  = eye .+ sx .* right .+ sy .* upc
+            te, tx = _rt_ray_box(o, fwd, lo, hi)
+            te >= tx && continue
+            r, g, b = f(o, te, tx, px, py)
+            img[py, px, 1] = r
+            img[py, px, 2] = g
+            img[py, px, 3] = b
+        end
+    end
+    return img
+end
+
 
 """
-    render_volume(F, x0, dx, lo, hi, cam, W, H, scene; ds = 2.0, early = 0.99, n_lut = 256)
+    render_volume(F, x0, dx, lo, hi, cam, W, H, scene; ds = 2.0, early = 0.99, n_lut = 256,
+                  l_ref = nothing, spp = 1, jitter = true, seed = 0, max_steps = typemax(Int))
 
 Volume-renders the cell-centred 3D scalar field `F` with an orthographic camera
 and returns an `H × W × 3` `Float32` RGB image in [0, 1] (row 1 at the top),
@@ -140,19 +228,47 @@ composited over black. Plot it with [`rt_image!`](@ref) and [`rt_colorbar`](@ref
   any Makie colormap (`:inferno`, `Reverse(:viridis)`, `cgrad(...)`, ...) and the
   opacity transfer function as `(u, alpha)` control points over the normalised
   value `u ∈ [0, 1]`, linear in between (an empty list gives alpha = u).
-- `ds`: sample spacing along the ray in world units, at the positions `t_k = k ds`
-  measured from the eye. Alpha is the opacity per sample, so the opacity of a
-  structure grows as `ds` shrinks.
+- `ds`: step along the ray in world units.
 - `early`: accumulated opacity at which a ray stops.
 - `n_lut`: entries of the colour/opacity lookup table.
+
+Integrators:
+
+- `l_ref = nothing` (default), entity's in-situ renderer: samples at `t_k = k ds`
+  from the eye, each with opacity `alpha(u)`, so the opacity of a structure grows
+  as `ds` shrinks.
+- `l_ref` set, the biased ray march of Blender Cycles: `alpha(u)` is the opacity of
+  a slab of thickness `l_ref`, i.e. extinction `σ(u) = -ln(1 - alpha(u)) / l_ref`
+  per world unit with emission `σ(u)` times the colormap colour. Segments of length
+  `ds` start at the ray's entry into the box, the first one shortened by a random
+  offset; each is shaded once at a random fraction of its length, with transmittance
+  `exp(-σ dt)` and the emission integrated exactly over `dt`. The image converges
+  as `ds` shrinks; at `ds = l_ref` its opacities match the default integrator.
+  - `spp`: ray samples per pixel, averaged, with stratified segment offsets.
+  - `jitter`: random offset and shading fraction per ray sample, which turns
+    banding at sharp features into noise; `false` uses full segments from the
+    entry point shaded at their midpoints (then `spp` must be 1).
+  - `seed`: seed of the per-pixel random numbers (images do not depend on threading).
+  - `max_steps`: segment count per ray above which `ds` is raised to
+    `path length / max_steps` (Cycles' default: 1024).
 
 Threaded over image rows.
 """
 function render_volume(F::AbstractArray{<:Real,3}, x0, dx, lo, hi, cam, W::Integer, H::Integer, scene;
-                       ds = 2.0, early = 0.99, n_lut = 256)
+                       ds = 2.0, early = 0.99, n_lut = 256,
+                       l_ref = nothing, spp::Integer = 1, jitter::Bool = true, seed::Integer = 0,
+                       max_steps::Integer = typemax(Int))
     Base.require_one_based_indexing(F)
     minimum(size(F)) >= 2 || throw(ArgumentError("F needs at least 2 cells per dimension, got size $(size(F))"))
     ds > 0 || throw(ArgumentError("ds must be positive, got $ds"))
+    if isnothing(l_ref)
+        spp == 1 || throw(ArgumentError("spp > 1 needs the Cycles integrator (l_ref)"))
+    else
+        l_ref > 0 || throw(ArgumentError("l_ref must be positive, got $l_ref"))
+        spp >= 1 || throw(ArgumentError("spp must be at least 1, got $spp"))
+        (jitter || spp == 1) || throw(ArgumentError("spp > 1 needs jitter = true"))
+        max_steps >= 1 || throw(ArgumentError("max_steps must be at least 1, got $max_steps"))
+    end
 
     eye, fwd, right, upc = _rt_camera_basis(cam)
     half_w, half_h = _rt_half_extent(cam, W, H)
@@ -160,7 +276,6 @@ function render_volume(F::AbstractArray{<:Real,3}, x0, dx, lo, hi, cam, W::Integ
     inv_dx = 1 ./ _rt_vec3(dx)
     lov    = _rt_vec3(lo)
     hiv    = _rt_vec3(hi)
-    lut    = _rt_lut(scene.cmap, scene.alpha, n_lut)
 
     logscale  = Bool(scene.log)
     vlo       = logscale ? log10(Float64(scene.vmin)) : Float64(scene.vmin)
@@ -170,17 +285,26 @@ function render_volume(F::AbstractArray{<:Real,3}, x0, dx, lo, hi, cam, W::Integ
     earlyf    = Float64(early)
 
     img = zeros(Float32, H, W, 3)
-    Threads.@threads for py = 1:H
-        sy = (1 - 2 * (py - 0.5) / H) * half_h
-        for px = 1:W
-            sx = (2 * (px - 0.5) / W - 1) * half_w
-            o  = eye .+ sx .* right .+ sy .* upc
-            te, tx = _rt_ray_box(o, fwd, lov, hiv)
-            te >= tx && continue
-            r, g, b = _rt_march(F, x0v, inv_dx, o, fwd, te, tx, dsf, lut, logscale, vlo, inv_range, earlyf)
-            img[py, px, 1] = r
-            img[py, px, 2] = g
-            img[py, px, 3] = b
+    if isnothing(l_ref)
+        lut = _rt_lut(scene.cmap, scene.alpha, n_lut)
+        _rt_pixels!(img, eye, fwd, right, upc, half_w, half_h, lov, hiv) do o, te, tx, px, py
+            _rt_march(F, x0v, inv_dx, o, fwd, te, tx, dsf, lut, logscale, vlo, inv_range, earlyf)
+        end
+    else
+        tab = _rt_extinction_lut(scene.cmap, scene.alpha, n_lut, Float64(l_ref))
+        _rt_pixels!(img, eye, fwd, right, upc, half_w, half_h, lov, hiv) do o, te, tx, px, py
+            ds_ray = tx - te > max_steps * dsf ? (tx - te) / max_steps : dsf
+            r = g = b = 0.0
+            for s = 1:spp
+                offset = jitter ? (s - 1 + _rt_rand(seed, px, py, s, 1)) / spp : 1.0
+                shade  = jitter ? _rt_rand(seed, px, py, s, 2) : 0.5
+                cr, cg, cb = _rt_march_segments(F, x0v, inv_dx, o, fwd, te, tx, ds_ray, tab, logscale, vlo,
+                                                inv_range, offset, shade, earlyf)
+                r += cr
+                g += cg
+                b += cb
+            end
+            return r / spp, g / spp, b / spp
         end
     end
     return img
